@@ -1,133 +1,159 @@
 import os
 import json
-import importlib
-from typing import List, Dict, Any
+import subprocess
+import shutil
+from typing import List, Dict
 
 class SkillManager:
-    """管理已经成功固化的 Skills（类似于蛋白质库）"""
+    """管理已经成功固化的 Skills（类似于生物体的蛋白质库）"""
     def __init__(self, skill_dir="./skills"):
         self.skill_dir = skill_dir
         os.makedirs(skill_dir, exist_ok=True)
-        # 初始化创建 __init__.py 使其成为可导入的包
-        with open(os.path.join(skill_dir, "__init__.py"), "a"): pass
+        # 初始化创建 __init__.py 使其成为可导入的 Python 包
+        with open(os.path.join(skill_dir, "__init__.py"), "a") as f:
+            pass
 
-    def register_skill(self, name: str, code: str, description: str):
-        """将成功的流程固化为 Skill 写入文件"""
-        file_path = os.path.join(self.skill_dir, f"{name}.py")
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(f'"""\nDescription: {description}\n"""\n\n')
-            f.write(code)
-        print(f"🧬 Skill 固化成功: {name}")
+    def register_skill(self, name: str, source_file_path: str):
+        """将生成的成功脚本复制到 skill 库中"""
+        target_path = os.path.join(self.skill_dir, f"{name}.py")
+        shutil.copy(source_file_path, target_path)
+        print(f"🧬 [DNA 表达] 成功固化新 Skill: {name}.py")
 
-    def get_skills_manifest(self) -> List[Dict[str, str]]:
-        """获取当前所有可用 Skill 的描述，供 Agent 规划时参考"""
-        manifest = []
+    def get_skills_context(self) -> str:
+        """获取当前所有可用 Skill 的描述，作为 Prompt 注入"""
+        skills = []
         for file in os.listdir(self.skill_dir):
             if file.endswith(".py") and not file.startswith("__"):
-                name = file[:-3]
-                # 简单读取描述
-                with open(os.path.join(self.skill_dir, file), "r", encoding="utf-8") as f:
-                    doc = f.read().split('"""')[1].strip() if '"""' in f.read() else "No description"
-                manifest.append({"name": name, "description": doc})
-        return manifest
+                skills.append(file)
+        if not skills:
+            return "当前没有任何可用 Skill。"
+        return f"当前已成功固化的 Skill 列表（存放在 ./skills 目录下，你可以直接 import 它们）: {', '.join(skills)}"
 
 
-class PiEvolutionAgent:
-    """基于 pi-coding-agent 封装的自进化智能体"""
-    def __init__(self, main_goal: str):
-        self.main_goal = main_goal
-        self.remaining_subgoals = [main_goal] # 初始时剩余目标为总目标
+class PiEvolvingSystem:
+    """自进化智能体系统控制中心"""
+    def __init__(self, total_goal: str):
+        self.total_goal = total_goal
         self.skill_manager = SkillManager()
+        self.current_workspace = "./agent_workspace"
+        os.makedirs(self.current_workspace, exist_ok=True)
         self.loop_count = 0
 
-    def call_pi_coding_agent(self, prompt: str) -> str:
+    def call_real_pi_agent(self, prompt: str, step_name: str) -> str:
         """
-        模拟调用 @earendil-works/pi-coding-agent
-        实际应用中，这里应替换为调用该 Agent 的 API 或命令行工具
+        真正通过命令行调用 @earendil-works/pi-coding-agent
         """
-        # 这里的 prompt 会包含：当前可用的 skills、当前要解决的子目标、需要输出的测试用例
-        print("🤖 pi-coding-agent 正在生成工作流程与代码...")
+        print(f"🤖 正在唤醒 pi-coding-agent 执行任务...")
         
-        # 伪代码：实际需调用 pi-coding-agent 生成 Python 代码
-        # 生成的代码必须包含：1. 解决逻辑  2. 验证该逻辑的 assert 语句
-        generated_code = """
-def solve_partial_task():
-    # 逻辑代码
-    result = "partial_success"
-    return result
+        # 定义本次迭代生成的临时代码文件路径
+        output_script = os.path.join(self.current_workspace, f"{step_name}.py")
+        
+        # 构造给 pi-coding-agent 的完整指令
+        full_instruction = f"""
+        你是一个专门编写 Python 脚本的编程智能体。
+        
+        【总体上下文与任务】
+        {prompt}
+        
+        【强制输出要求】
+        1. 请直接编写一个完整的 Python 脚本。
+        2. 脚本中必须包含实现上述任务的代码逻辑。
+        3. 脚本的底部必须包含自动化测试断言（Assert），用于自检本次任务是否完全成功。
+        4. 请将最终的完整代码保存到文件：{output_script}
+        """
 
-# 自动化测试断言
-assert solve_partial_task() == "partial_success"
-"""
-        return generated_code
-
-    def execute_and_test(self, code: str) -> bool:
-        """执行生成的流程，若断言通过则视为部分成功"""
         try:
-            # 安全起见，实际应用建议在沙箱或子进程中运行
-            local_vars = {}
-            exec(code, globals(), local_vars)
-            return True
-        except Exception as e:
-            print(f"❌ 流程运行或测试失败: {e}")
+            # 真正调用 pi-coding-agent 的 CLI 接口
+            # 注意：请根据你安装的 npm 包的实际 CLI 命令调整 ["pi-agent", "run", ...]
+            result = subprocess.run(
+                ["pi", "code", "-p", full_instruction], 
+                capture_output=True, 
+                text=True, 
+                check=True
+            )
+            print("🤖 pi-coding-agent 思考并生成完毕。")
+            return output_script
+        except subprocess.CalledProcessError as e:
+            print(f"❌ 调用 pi-coding-agent 失败: {e.stderr}")
+            return ""
+        except FileNotFoundError:
+            print("❌ 未在系统中找到 'pi-agent' 命令行工具，请确保已执行 npm install -g 安装。")
+            return ""
+
+    def verify_workflow(self, script_path: str) -> bool:
+        """运行生成的 Python 脚本，通过断言(Assert)则代表成功"""
+        if not script_path or not os.path.exists(script_path):
+            return False
+        
+        print(f"🧪 正在运行断言测试: {script_path} ...")
+        try:
+            # 在独立子进程中运行脚本，防止崩溃影响主进程
+            res = subprocess.run(["python", script_path], capture_output=True, text=True, timeout=30)
+            if res.returncode == 0:
+                print("✅ 测试通过！流程工作正常。")
+                return True
+            else:
+                print(f"❌ 测试失败（断言未通过或运行时报错）:\n{res.stderr}")
+                return False
+        except subprocess.TimeoutExpired:
+            print("❌ 测试失败：代码运行超时。")
             return False
 
-    def check_total_completion(self) -> bool:
-        """检查总目标是否已达成"""
-        # 实际应用中，可通过另一个 LLM 充当裁判，评估当前 Skill 库是否已覆盖总目标
-        return len(self.remaining_subgoals) == 0
+    def start_evolution(self):
+        """核心进化循环：规划 -> 生产 -> 筛选 -> 固化"""
+        # 实际应用中，可以通过一个轻量级大模型（如 GPT-4o-mini）来动态扣减目标
+        # 这里用模拟的步骤目标来演示循环逻辑
+        simulated_sub_goals = [
+            "步骤1：编写代码请求 API 获取原始 JSON 数据，并将其保存到本地 raw.json",
+            "步骤2：读取本地 raw.json，清洗掉空值，提取价格字段，计算出平均值",
+            "步骤3：读取平均值数据，使用 matplotlib 绘制趋势图并保存为 chart.png"
+        ]
 
-    def evolve_loop(self):
-        """核心循环：规划 -> 尝试 -> 固化 -> 再规划"""
-        while not self.check_total_completion() and self.loop_count < 10:
+        for current_task in simulated_sub_goals:
             self.loop_count += 1
-            print(f"\n🔄 --- 开始第 {self.loop_count} 轮进化循环 ---")
+            print(f"\n🔄 ======= 【第 {self.loop_count} 轮进化循环开始】 =======")
             
-            # 1. 收集当前的“基因库”（现有 Skills）
-            available_skills = self.skill_manager.get_skills_manifest()
+            # 1. 获取当前环境中所有已经进化出来的“蛋白质（Skills）”
+            existing_skills = self.skill_manager.get_skills_context()
             
-            # 2. 构造 Prompt，告诉 Agent 当前进度和剩余目标
-            prompt = f"""
-            总目标: {self.main_goal}
-            当前已有的 Skill 库 (可在代码中 import skills.<name>): {json.dumps(available_skills)}
-            当前需要解决的问题: {self.remaining_subgoals[0]}
+            # 2. 拼接当前轮次的 Prompt
+            prompt_context = f"""
+            最终总目标: {self.total_goal}
             
-            请利用现有 Skill（如有必要）构建一个新的分布式工作流程（Python 代码）。
-            代码中必须包含至少一个显式的 assert 语句来验证本次局部目标是否达成。
+            当前可调用的基础设施（基因库）:
+            {existing_skills}
+            
+            当前你需要解决的局部目标（剩下的问题）:
+            {current_task}
+            
+            提示：如果之前的 Skill 对你有帮助，你可以在代码中 `from skills import skill_xxx` 来复用它。
             """
             
-            # 3. 让 pi-coding-agent 编写工作流代码
-            code_proposal = self.call_pi_coding_agent(prompt)
+            # 3. 真正调用外部的 pi-coding-agent 生产代码
+            step_name = f"skill_step_{self.loop_count}"
+            generated_script = self.call_real_pi_agent(prompt_context, step_name)
             
-            # 4. 运行并测试该流程
-            success = self.execute_and_test(code_proposal)
+            # 4. 环境选择压力测试（运行 Assert）
+            is_success = self.verify_workflow(generated_script)
             
-            if success:
-                # 5. 成功：做成 Skill 固化下来
-                skill_name = f"skill_step_{self.loop_count}"
-                self.skill_manager.register_skill(
-                    name=skill_name, 
-                    code=code_proposal, 
-                    description=f"解决了: {self.remaining_subgoals[0][:30]}..."
-                )
-                
-                # 6. 更新目标状态（实际应用中需动态评估剩余什么任务）
-                print(f"✅ 成功攻克阶段性目标！")
-                # 假设任务被递进解决，这里移出已完成的，加入新的（此处仅作示意）
-                self.remaining_subgoals.pop(0) 
-                if self.loop_count == 3: # 模拟第3轮全部搞定
-                    break
+            if is_success:
+                # 5. 成功：将其固化为 Skill 存入技能库
+                self.skill_manager.register_skill(step_name, generated_script)
             else:
-                # 7. 失败：什么都不做，下一轮重新针对该目标生成不同策略
-                print(f"⚠️ 本轮尝试失败，不固化任何 Skill。准备重新规划。")
+                # 6. 失败：什么都不做（丢弃该次生成的错误代码），下一轮针对该目标重新生成
+                print(f"⚠️ 流程步骤运行失败。此代码被淘汰，不转为 Skill。系统将重试该目标。")
+                # 在真实业务中，这里应该退回当前循环 index，让 Agent 换一种方案重新尝试该任务
 
-        print("\n🏁 进化结束。总目标达成或达到最大循环次数。")
+        print("\n🏁 ======= 进化循环结束：所有目标已尝试攻克 =======\n")
 
-# --- 运行示例 ---
+
+# --- 运行入口 ---
 if __name__ == "__main__":
-    # 设定一个复杂目标
-    target_problem = "抓取特定网页数据，清洗出价格字段，计算平均值，并生成可视化图表"
+    # 定义你想解决的复杂问题
+    my_problem = "自动化获取电商数据、清洗并计算均值、最后生成可视化图表"
     
-    agent = PiEvolutionAgent(main_goal=target_problem)
-    agent.evolve_loop()
-
+    # 实例化自进化系统
+    evolving_agent = PiEvolvingSystem(total_goal=my_problem)
+    
+    # 启动系统
+    evolving_agent.start_evolution()
